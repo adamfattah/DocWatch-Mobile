@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "docwatch",
+    "slug": "docwatch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "docwatch",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.yourcompany.docwatch",
+      "supportsTablet": false,
+      "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Snap a photo of a document so docwatch can read its expiration date.",
+        "NSPhotoLibraryUsageDescription": "Pick a document photo so docwatch can read its expiration date.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "plugins": [
+      "expo-apple-authentication",
+      "expo-dev-client",
+      ["expo-notifications", { "icon": "./assets/notification-icon.png" }],
+      ["expo-image-picker", { "cameraPermission": "Snap a photo of a document so docwatch can read its expiration date." }],
+      ["@react-native-google-signin/google-signin", { "iosUrlScheme": "com.googleusercontent.apps.YOUR_IOS_CLIENT_ID" }]
+    ],
+    "extra": {
+      "eas": { "projectId": "YOUR_EAS_PROJECT_ID" },
+      "firebase": {
+        "apiKey": "YOUR_API_KEY",
+        "authDomain": "YOUR_PROJECT.firebaseapp.com",
+        "projectId": "YOUR_PROJECT",
+        "storageBucket": "YOUR_PROJECT.firebasestorage.app",
+        "messagingSenderId": "YOUR_SENDER_ID",
+        "appId": "YOUR_APP_ID"
+      },
+      "googleWebClientId": "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
+      "googleIosClientId": "YOUR_IOS_CLIENT_ID.apps.googleusercontent.com"
+    }
+  }
+}
