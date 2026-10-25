@@ -150,19 +150,35 @@ export function countBuckets(docs: StatusDoc[], today: string): Record<Bucket, n
 // --- reminders -----------------------------------------------------------
 
 export const DEFAULT_REMINDER_DAYS = 30;
-export const DEFAULT_REMINDER_HOUR = 9;
+export const DEFAULT_REMINDER_TIME = "09:00";
+export const REMINDER_DAY_OPTIONS = [7, 14, 30, 60, 90];
 
-/** Default reminder: N days before the governing date at 9:00 local; text like "Sep 30, 2026 at 9:00 AM". */
-export function defaultReminder(doc: StatusDoc, today: string, daysBefore = DEFAULT_REMINDER_DAYS, hour = DEFAULT_REMINDER_HOUR) {
+/** "09:00" -> "9:00 AM" */
+export function formatTime(hhmm: string): string {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m) return hhmm;
+  const h = +m[1], h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${m[2]} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Date -> "HH:MM" local */
+export const toHHMM = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+/** Local Date -> "Oct 30, 2026 at 9:00 AM" */
+export function formatDateTime(d: Date): string {
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${formatTime(toHHMM(d))}`;
+}
+
+/** Default reminder: N days before the governing date at the user's time; text like "Sep 30, 2026 at 9:00 AM". */
+export function defaultReminder(doc: StatusDoc, today: string, daysBefore = DEFAULT_REMINDER_DAYS, time = DEFAULT_REMINDER_TIME) {
   const g = governingDate(doc);
   if (!g) return null;
   const t = parseISODate(g.iso)! - daysBefore * MS_DAY;
   const d = new Date(t);
   const iso = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  const h12 = ((hour + 11) % 12) + 1, ampm = hour < 12 ? "AM" : "PM";
   const sent = (doc.remindersSent ?? []).includes(daysBefore);
   const past = (daysUntil(iso, today) ?? 1) < 0;
-  return { iso, when: `${longDate(iso)} at ${h12}:00 ${ampm}`, state: sent ? "sent" : past ? "missed" : "scheduled", daysBefore };
+  return { iso, when: `${longDate(iso)} at ${formatTime(time)}`, state: sent ? "sent" : past ? "missed" : "scheduled", daysBefore };
 }
 
 // --- misc ----------------------------------------------------------------

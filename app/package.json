@@ -30,6 +30,7 @@
     "expo-file-system": "~18.1.11",
     "expo-image-manipulator": "~13.1.7",
     "expo-image-picker": "~16.1.0",
+    "expo-local-authentication": "~16.0.5",
     "expo-localization": "~16.1.0",
     "expo-notifications": "~0.31.0",
     "expo-sharing": "~13.1.5",

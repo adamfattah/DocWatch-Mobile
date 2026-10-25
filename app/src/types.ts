@@ -16,7 +16,20 @@ export interface Doc {
   contentType: string;
   error?: string | null;
   remindersSent?: number[];
+  customReminderAt?: { seconds: number } | null;
+  customReminderSentAt?: { seconds: number } | null;
   createdAt?: { seconds: number };
+}
+
+export interface UserSettings {
+  email?: string | null;
+  timezone?: string;
+  pushToken?: string | null;
+  reminderDays?: number;        // 7 | 14 | 30 | 60 | 90
+  reminderTime?: string;        // "HH:MM"
+  notificationsEnabled?: boolean;
+  requireFaceId?: boolean;
+  notificationPrompted?: boolean;
 }
 
 export type RootStackParamList = {

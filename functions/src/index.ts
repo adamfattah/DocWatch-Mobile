@@ -1,5 +1,7 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
+import { getAuth } from "firebase-admin/auth";
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -7,6 +9,8 @@ import { setGlobalOptions } from "firebase-functions/v2";
 import { defineSecret } from "firebase-functions/params";
 import { processDoc } from "./process";
 import { sendPush } from "./push";
+import { buildExport } from "./exporter";
+import { dueDefaultReminder, customReminderDue, defaultMessage, customMessage, ReminderDoc } from "./reminders";
 import type { DocRecord, UserRecord } from "./types";
 
 initializeApp();
@@ -14,9 +18,8 @@ setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 const db = getFirestore();
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 
-// Defaults - the user never configures these.
-const REMINDER_DAYS = [30, 7, 1, 0]; // days before expiry; 0 = day of
-const LOCAL_SEND_HOUR = 9;           // 9am in the user's timezone
+const EXPORT_TTL_HOURS = 24;
+const RECENT_LOGIN_SECONDS = 5 * 60;
 
 // 1) File lands in Storage -> classify + extract -> write Firestore doc -> maybe ask for review.
 export const onDocUploaded = onObjectFinalized({ memory: "1GiB", timeoutSeconds: 120, secrets: [OPENAI_API_KEY] }, async (event) => {
@@ -42,45 +45,95 @@ export const reprocessDoc = onCall({ memory: "1GiB", timeoutSeconds: 120, secret
   return { status };
 });
 
-// 2) Hourly: for every user whose local time is 9am, send due reminders.
-export const sendReminders = onSchedule("every 60 minutes", async () => {
+// 2) Every 15 minutes: default-schedule reminders at each user's local reminder time, plus one-off custom reminders.
+//    All the maths lives in reminders.ts (pure, unit-tested).
+export const sendReminders = onSchedule("every 15 minutes", async () => {
   const users = await db.collection("users").where("pushToken", "!=", null).get();
   const now = new Date();
 
   for (const u of users.docs) {
     const user = u.data() as UserRecord;
-    const tz = user.timezone || "UTC";
-    const local = localParts(now, tz);
-    if (local.hour !== LOCAL_SEND_HOUR) continue;
-
-    const docs = await u.ref.collection("docs").where("status", "==", "ready").get();
+    if (user.notificationsEnabled === false) continue;
+    const docs = await u.ref.collection("docs").get();
     for (const d of docs.docs) {
-      const doc = d.data() as DocRecord;
-      const target = doc.expirationDate ?? doc.renewalDate;
-      if (!target) continue;
-      const daysLeft = daysBetween(local.date, target);
-      const sent = new Set(doc.remindersSent ?? []);
-      // Send the smallest reminder bucket that is due and not yet sent (covers missed days).
-      const due = REMINDER_DAYS.filter((n) => daysLeft <= n && !sent.has(n)).sort((a, b) => a - b)[0];
-      if (due === undefined || daysLeft < 0) continue;
+      const rec = d.data() as DocRecord;
+      const doc: ReminderDoc = { ...rec, customReminderAt: toDate(rec.customReminderAt), customReminderSentAt: toDate(rec.customReminderSentAt) };
 
-      const when = daysLeft === 0 ? "expires today" : daysLeft === 1 ? "expires tomorrow" : `expires in ${daysLeft} days`;
-      await sendPush(user.pushToken, `${doc.title} ${when}`, `Expiration date: ${target}`, { docId: d.id });
-      await d.ref.update({ remindersSent: FieldValue.arrayUnion(...REMINDER_DAYS.filter((n) => n >= due && daysLeft <= n)) });
+      const due = dueDefaultReminder(doc, user, now);
+      if (due) {
+        const msg = defaultMessage(doc, due);
+        await sendPush(user.pushToken, msg.title, msg.body, { docId: d.id });
+        await d.ref.update({ remindersSent: FieldValue.arrayUnion(...due.markSent) });
+      }
+      if (customReminderDue(doc, user, now)) {
+        const msg = customMessage(doc);
+        await sendPush(user.pushToken, msg.title, msg.body, { docId: d.id });
+        await d.ref.update({ customReminderSentAt: Timestamp.fromDate(now) });
+      }
     }
   }
 });
 
-function localParts(d: Date, tz: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
-  return { date: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
+// 3) Export My Data: zip of every original file plus documents.json, under exports/{uid}/, short-lived link.
+export const exportData = onCall({ memory: "1GiB", timeoutSeconds: 300 }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const bucket = getStorage().bucket();
+  const docs = await db.collection(`users/${uid}/docs`).get();
+  const records = docs.docs.map((d) => ({ id: d.id, ...plain(d.data()) }));
+  const path = `exports/${uid}/docwatch-export-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+  await buildExport(bucket, uid, records, path);
+
+  // Prefer a signed URL (needs the runtime service account to be allowed to sign). If that is not set up,
+  // return the path; the app reads it through Storage rules (exports/{uid} is owner-readable).
+  const expiresAt = Date.now() + 15 * 60 * 1000;
+  try {
+    const [url] = await bucket.file(path).getSignedUrl({ version: "v4", action: "read", expires: expiresAt });
+    return { url, path, expiresAt, count: records.length };
+  } catch (e: any) {
+    console.warn("signed url unavailable, returning path", e?.code ?? e?.message);
+    return { url: null, path, expiresAt, count: records.length };
+  }
+});
+
+// 3b) Hourly: remove exports older than 24 hours.
+export const cleanupExports = onSchedule("every 60 minutes", async () => {
+  const [files] = await getStorage().bucket().getFiles({ prefix: "exports/" });
+  const cutoff = Date.now() - EXPORT_TTL_HOURS * 3600 * 1000;
+  for (const f of files) {
+    const created = new Date(f.metadata.timeCreated as string).getTime();
+    if (created < cutoff) await f.delete().catch(() => {});
+  }
+});
+
+// 4) Delete Account: files, exports, Firestore tree, then the Auth user. Requires a recent sign-in.
+export const deleteAccount = onCall({ memory: "512MiB", timeoutSeconds: 300 }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const authTime = Number(request.auth?.token?.auth_time ?? 0);
+  if (Date.now() / 1000 - authTime > RECENT_LOGIN_SECONDS) throw new HttpsError("failed-precondition", "recent-login");
+
+  const bucket = getStorage().bucket();
+  await bucket.deleteFiles({ prefix: `users/${uid}/`, force: true });
+  await bucket.deleteFiles({ prefix: `exports/${uid}/`, force: true });
+  await db.recursiveDelete(db.doc(`users/${uid}`));
+  await getAuth().deleteUser(uid);
+  return { ok: true };
+});
+
+function toDate(v: unknown): Date | null {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  if (typeof (v as any).toDate === "function") return (v as any).toDate();
+  if (typeof v === "string" || typeof v === "number") { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+  return null;
 }
 
-function daysBetween(fromISO: string, toISO: string) {
-  const a = Date.UTC(+fromISO.slice(0, 4), +fromISO.slice(5, 7) - 1, +fromISO.slice(8, 10));
-  const b = Date.UTC(+toISO.slice(0, 4), +toISO.slice(5, 7) - 1, +toISO.slice(8, 10));
-  return Math.round((b - a) / 86400000);
+// Firestore Timestamps -> ISO strings so the export JSON is readable.
+function plain(v: any): any {
+  if (v === null || v === undefined) return v;
+  if (typeof v.toDate === "function") return v.toDate().toISOString();
+  if (Array.isArray(v)) return v.map(plain);
+  if (typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+  return v;
 }

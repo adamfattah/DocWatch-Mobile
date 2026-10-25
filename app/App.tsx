@@ -5,11 +5,16 @@ import { NavigationContainer, NavigationContainerRef, DefaultTheme } from "@reac
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { onAuthStateChanged, User } from "firebase/auth";
 import * as Notifications from "expo-notifications";
 import { auth } from "./src/firebase";
-import { registerForPush } from "./src/lib/notifications";
+import { saveProfile } from "./src/lib/notifications";
 import { DocsProvider } from "./src/lib/docs";
+import { SettingsProvider, useSettings } from "./src/lib/settings";
+import { LockProvider, useLock } from "./src/lib/lock";
+import LockScreen from "./src/components/LockScreen";
+import NotificationPrimingScreen from "./src/screens/NotificationPrimingScreen";
 import SignInScreen from "./src/screens/SignInScreen";
 import UpcomingScreen from "./src/screens/UpcomingScreen";
 import DocumentsScreen from "./src/screens/DocumentsScreen";
@@ -56,7 +61,7 @@ export default function App() {
 
   useEffect(() => onAuthStateChanged(auth, (u) => {
     setUser(u);
-    if (u) registerForPush(u.uid, u.email).catch(console.warn);
+    if (u) saveProfile(u.uid, u.email).catch(console.warn);
   }), []);
 
   // Tapping a notification opens that document.
@@ -70,22 +75,49 @@ export default function App() {
 
   if (user === undefined) return <View style={{ flex: 1, justifyContent: "center", backgroundColor: colors.background }}><ActivityIndicator /></View>;
 
+  // SafeAreaProvider at the root so screens rendered outside a navigator (sign-in, priming, lock) get real insets.
   return (
+    <SafeAreaProvider>
     <NavigationContainer ref={navRef} theme={theme}>
       <StatusBar style="dark" />
       {user ? (
-        <DocsProvider uid={user.uid}>
-          <Stack.Navigator>
-            <Stack.Screen name="Tabs" options={{ headerShown: false }}>{() => <Tabs uid={user.uid} />}</Stack.Screen>
-            <Stack.Screen
-              name="Document"
-              options={{ title: "", headerBackTitle: "Back", headerTintColor: colors.accent, headerShadowVisible: false, headerStyle: { backgroundColor: colors.background } }}
-            >
-              {() => <DocumentDetailScreen uid={user.uid} />}
-            </Stack.Screen>
-          </Stack.Navigator>
-        </DocsProvider>
+        <SettingsProvider uid={user.uid}>
+          <DocsProvider uid={user.uid}>
+            <LockProvider>
+              <SignedIn uid={user.uid} />
+            </LockProvider>
+          </DocsProvider>
+        </SettingsProvider>
       ) : <SignInScreen />}
     </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}
+
+// Priming once after first sign-in, then the app; the Face ID cover sits over everything while locked.
+function SignedIn({ uid }: { uid: string }) {
+  const { settings } = useSettings();
+  const { locked, unlock, setEnabled } = useLock();
+  // Keep the on-device lock flag in step with the account setting (new device, reinstall, or sign-out/in).
+  useEffect(() => { if (settings) setEnabled(settings.requireFaceId === true); }, [settings?.requireFaceId, setEnabled]);
+  return (
+    <View style={{ flex: 1 }}>
+      {settings === null ? (
+        <View style={{ flex: 1, justifyContent: "center", backgroundColor: colors.background }}><ActivityIndicator /></View>
+      ) : settings.notificationPrompted !== true ? (
+        <NotificationPrimingScreen />
+      ) : (
+        <Stack.Navigator>
+          <Stack.Screen name="Tabs" options={{ headerShown: false }}>{() => <Tabs uid={uid} />}</Stack.Screen>
+          <Stack.Screen
+            name="Document"
+            options={{ title: "", headerBackTitle: "Back", headerTintColor: colors.accent, headerShadowVisible: false, headerStyle: { backgroundColor: colors.background } }}
+          >
+            {() => <DocumentDetailScreen uid={uid} />}
+          </Stack.Screen>
+        </Stack.Navigator>
+      )}
+      {locked && <LockScreen onUnlock={unlock} />}
+    </View>
   );
 }

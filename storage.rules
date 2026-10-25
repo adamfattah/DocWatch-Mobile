@@ -7,5 +7,9 @@ service firebase.storage {
         && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
       allow read, delete: if request.auth != null && request.auth.uid == uid;
     }
+    // Data exports are written by the exportData function; the owner may download them (they are removed after 24 h).
+    match /exports/{uid}/{file} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }

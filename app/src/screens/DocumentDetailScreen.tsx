@@ -3,14 +3,15 @@ import { View, Text, Pressable, ScrollView, StyleSheet, Alert, ActivityIndicator
 import { Ionicons } from "@expo/vector-icons";
 import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { ref, deleteObject, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { useDocs } from "../lib/docs";
+import { useSettings, effectiveReminder } from "../lib/settings";
 import { tryAgain } from "../lib/reprocess";
 import { downloadAndShare } from "../lib/files";
 import {
-  CATEGORIES, categoryFor, statusLine, longDate, defaultReminder, subtitleFor, todayISO, parseISODate, toISODate,
+  CATEGORIES, categoryFor, statusLine, longDate, defaultReminder, subtitleFor, todayISO, parseISODate, toISODate, formatDateTime,
 } from "../lib/status";
 import FilePreview from "../components/FilePreview";
 import DatePickerSheet from "../components/DatePickerSheet";
@@ -24,10 +25,12 @@ export default function DocumentDetailScreen({ uid }: { uid: string }) {
   const { params } = useRoute<RouteProp<RootStackParamList, "Document">>();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const docs = useDocs();
+  const { settings } = useSettings();
   const d = docs?.find((x) => x.id === params.docId);
   const today = todayISO();
   const [holder, setHolder] = useState<string | null>(null); // null = not editing, show stored value
   const [picker, setPicker] = useState<"expirationDate" | "renewalDate" | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const save = async (fields: Editable) => {
@@ -58,7 +61,16 @@ export default function DocumentDetailScreen({ uid }: { uid: string }) {
 
   const cat = categoryFor(d.docType);
   const st = statusLine(d, today);
-  const reminder = defaultReminder(d, today);
+  const rs = effectiveReminder(settings);
+  const reminder = defaultReminder(d, today, rs.days, rs.time);
+  const customAt = d.customReminderAt ? new Date(d.customReminderAt.seconds * 1000) : null;
+  const customSent = !!d.customReminderSentAt;
+  // Setting or changing the custom reminder re-arms it (customReminderSentAt is cleared).
+  const saveCustom = async (date: Date | null) => {
+    try {
+      await updateDoc(doc(db, "users", uid, "docs", params.docId), { customReminderAt: date ? Timestamp.fromDate(date) : null, customReminderSentAt: null });
+    } catch (e: any) { Alert.alert("Couldn't save", e?.message ?? "Please try again."); }
+  };
   const subtitle = subtitleFor(d.issuer, d.documentNumberLast4);
   const failed = d.status === "failed", processing = d.status === "processing";
 
@@ -132,14 +144,39 @@ export default function DocumentDetailScreen({ uid }: { uid: string }) {
         <View style={s.reminder}>
           <View style={s.bell}><Ionicons name="notifications" size={16} color={colors.danger} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={s.reminderTitle}>Default · 30 days before</Text>
+            <Text style={s.reminderTitle}>Default · {rs.days} days before</Text>
             <Text style={s.reminderSub}>{reminder ? `${reminder.when} · ${reminder.state}` : "Add an expiry date to get reminded."}</Text>
           </View>
         </View>
+        <Separator />
+        {customAt ? (
+          <Pressable style={({ pressed }) => [s.reminder, pressed && { backgroundColor: "#F7F7F9" }]} onPress={() => setCustomOpen(true)}>
+            <View style={[s.bell, { backgroundColor: tint(colors.accent) }]}><Ionicons name="alarm" size={16} color={colors.accent} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.reminderTitle}>Custom reminder</Text>
+              <Text style={s.reminderSub}>{formatDateTime(customAt)} · {customSent ? "sent" : customAt.getTime() < Date.now() ? "due" : "scheduled"}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#C7C7CC" />
+          </Pressable>
+        ) : (
+          <Pressable style={({ pressed }) => [s.customLink, pressed && { backgroundColor: "#F7F7F9" }]} onPress={() => setCustomOpen(true)}>
+            <Text style={s.customLinkText}>Set Custom Reminder</Text>
+          </Pressable>
+        )}
       </Card>
 
       <Pressable onPress={remove} style={s.deleteWrap}><Text style={s.delete}>Delete Document</Text></Pressable>
 
+      <DatePickerSheet
+        visible={customOpen}
+        title="Custom Reminder"
+        mode="datetime"
+        minimumDate={new Date()}
+        value={customAt}
+        onConfirm={(date) => { saveCustom(date); setCustomOpen(false); }}
+        onClear={customAt ? () => { saveCustom(null); setCustomOpen(false); } : undefined}
+        onCancel={() => setCustomOpen(false)}
+      />
       <DatePickerSheet
         visible={picker !== null}
         title={picker === "renewalDate" ? "Renewal" : "Expires"}
@@ -181,6 +218,8 @@ const s = StyleSheet.create({
   bell: { width: 32, height: 32, borderRadius: 8, backgroundColor: tint(colors.danger), alignItems: "center", justifyContent: "center" },
   reminderTitle: { ...type.body, color: colors.text },
   reminderSub: { ...type.caption, color: colors.textTertiary, marginTop: 2 },
+  customLink: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12 },
+  customLinkText: { ...type.body, color: colors.accent },
   deleteWrap: { marginTop: 32, alignItems: "center" },
   delete: { ...type.body, color: colors.danger },
 });

@@ -21,6 +21,8 @@ export interface DocRecord extends Partial<Extraction> {
   needsReview?: boolean;
   reviewedAt?: FirebaseFirestore.Timestamp | null;
   remindersSent?: number[];  // days-before values already sent, e.g. [30, 7]
+  customReminderAt?: FirebaseFirestore.Timestamp | null;      // one-off reminder instant, set by the client
+  customReminderSentAt?: FirebaseFirestore.Timestamp | null;  // server-written; client clears it to re-arm
   error?: string | null;
 }
 
@@ -28,4 +30,9 @@ export interface UserRecord {
   pushToken?: string | null;
   timezone?: string;         // IANA, defaults to UTC
   email?: string | null;
+  reminderDays?: number;         // 7 | 14 | 30 | 60 | 90, default 30
+  reminderTime?: string;         // "HH:MM" local, default "09:00"
+  notificationsEnabled?: boolean;
+  requireFaceId?: boolean;
+  notificationPrompted?: boolean;
 }

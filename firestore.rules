@@ -2,7 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      // Profile and settings (timezone, reminderDays, reminderTime, notificationsEnabled, requireFaceId, notificationPrompted, pushToken).
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && (!('reminderDays' in request.resource.data) || request.resource.data.reminderDays in [7, 14, 30, 60, 90])
+        && (!('reminderTime' in request.resource.data) || request.resource.data.reminderTime.matches('^[0-2][0-9]:[0-5][0-9]$'));
       match /docs/{docId} {
         // Client may read, delete, and correct the fields it can edit on the detail screen.
         // Everything else (status, issuer, documentNumberLast4, confidence, storagePath...) is server-written.
@@ -11,7 +15,10 @@ service cloud.firestore {
           && request.resource.data.status == 'processing';
         allow update: if request.auth != null && request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['docType', 'holderName', 'expirationDate', 'renewalDate', 'title', 'needsReview', 'reviewedAt', 'remindersSent'])
+             .hasOnly(['docType', 'holderName', 'expirationDate', 'renewalDate', 'title', 'needsReview', 'reviewedAt', 'remindersSent', 'customReminderAt', 'customReminderSentAt'])
+          // A custom reminder is set as a timestamp; the client may only CLEAR the sent mark (re-arm), never set it.
+          && (!('customReminderAt' in request.resource.data) || request.resource.data.customReminderAt == null || request.resource.data.customReminderAt is timestamp)
+          && (!('customReminderSentAt' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.customReminderSentAt == null)
           && (!('title' in request.resource.data) || request.resource.data.title is string)
           && (!('docType' in request.resource.data) || request.resource.data.docType is string)
           && (!('holderName' in request.resource.data) || request.resource.data.holderName == null || request.resource.data.holderName is string)

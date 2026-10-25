@@ -8,16 +8,18 @@ type Props = {
   visible: boolean;
   title: string;
   value: Date | null;
+  mode?: "date" | "time" | "datetime";
+  minimumDate?: Date;
   onConfirm: (d: Date) => void;
   onClear?: () => void;
   onCancel: () => void;
 };
 
-// Native inline iOS calendar in a bottom sheet with Clear / Done.
-export default function DatePickerSheet({ visible, title, value, onConfirm, onClear, onCancel }: Props) {
+// Native iOS picker in a bottom sheet with Clear / Done. Inline calendar for dates, wheels for time and date+time.
+export default function DatePickerSheet({ visible, title, value, mode = "date", minimumDate, onConfirm, onClear, onCancel }: Props) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState<Date>(value ?? new Date());
-  useEffect(() => { if (visible) setDraft(value ?? new Date()); }, [visible, value]);
+  useEffect(() => { if (visible) setDraft(value ?? defaultFor(mode)); }, [visible, value, mode]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
@@ -30,8 +32,10 @@ export default function DatePickerSheet({ visible, title, value, onConfirm, onCl
         </View>
         <DateTimePicker
           value={draft}
-          mode="date"
-          display="inline"
+          mode={mode}
+          display={mode === "date" ? "inline" : "spinner"}
+          minimumDate={minimumDate}
+          minuteInterval={mode === "date" ? undefined : 5}
           themeVariant="light"
           accentColor={colors.accent}
           onChange={(_, d) => d && setDraft(d)}
@@ -40,6 +44,14 @@ export default function DatePickerSheet({ visible, title, value, onConfirm, onCl
       </View>
     </Modal>
   );
+}
+
+// A sensible starting point: next hour on the hour for date+time, 9:00 for time, today for dates.
+function defaultFor(mode: Props["mode"]) {
+  const d = new Date();
+  if (mode === "time") { d.setHours(9, 0, 0, 0); return d; }
+  if (mode === "datetime") { d.setMinutes(0, 0, 0); d.setHours(d.getHours() + 1); return d; }
+  return d;
 }
 
 const s = StyleSheet.create({

@@ -8,6 +8,7 @@ import {
   sendPasswordResetEmail, signOut as fbSignOut,
 } from "firebase/auth";
 import { auth } from "../firebase";
+import { writeLockFlag } from "./lock";
 
 const extra = Constants.expoConfig?.extra ?? {};
 let googleConfigured = false;
@@ -57,5 +58,6 @@ export const resetPassword = (email: string) => sendPasswordResetEmail(auth, ema
 
 export async function signOut() {
   try { configureGoogle(); await GoogleSignin.signOut(); } catch {}
+  await writeLockFlag(false); // the Face ID lock is per account; the next sign-in starts unlocked
   await fbSignOut(auth);
 }

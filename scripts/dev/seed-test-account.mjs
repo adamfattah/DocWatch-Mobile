@@ -8,56 +8,16 @@
 // Auth: reuses the Firebase CLI's logged-in account (firebase login) through firebase-tools' own library.
 // Never ships in the app. Copies only; the source account is never modified. Idempotent: docs that already
 // exist in the target are skipped. Prints counts only, never document contents or names.
-import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { initAdmin, findUser, mask } from "./lib/admin.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repo = resolve(here, "../..");
-const require = createRequire(import.meta.url);
-const PROJECT = "docwatch-mobile";
 const FIXTURES = join(here, "fixtures");
-
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => a.startsWith("--") ? [a.slice(2), all[i + 1]?.startsWith("--") || all[i + 1] === undefined ? true : all[i + 1]] : []).filter(Boolean));
 
-// --- Firebase CLI credentials -> admin SDK credential (token stays in memory) ---------------------------
-const ftRoot = join(execSync("npm root -g", { encoding: "utf8" }).trim(), "firebase-tools");
-const cliAuth = require(join(ftRoot, "lib/auth.js"));
-const account = cliAuth.getGlobalDefaultAccount();
-if (!account) { console.error("Run `firebase login` first."); process.exit(1); }
-// Same thing the Firebase emulators do: hand the admin SDK an "authorized_user" credential built from the CLI's
-// refresh token and the CLI's own OAuth client, via a 0600 temp file that is removed when the script exits.
-// (Firestore only accepts application-default credentials, so it has to come through the env var.)
-const cliApi = require(join(ftRoot, "lib/api.js"));
-const credFile = join(tmpdir(), `docwatch-seed-${process.pid}.json`);
-writeFileSync(credFile, JSON.stringify({
-  type: "authorized_user", client_id: cliApi.clientId(), client_secret: cliApi.clientSecret(), refresh_token: account.tokens.refresh_token,
-}), { mode: 0o600 });
-process.env.GOOGLE_APPLICATION_CREDENTIALS = credFile;
-process.env.GOOGLE_CLOUD_PROJECT = PROJECT;
-const cleanup = () => { try { unlinkSync(credFile); } catch {} };
-process.on("exit", cleanup); process.on("SIGINT", () => { cleanup(); process.exit(130); });
-
-const fnMods = join(repo, "functions/node_modules");
-const { initializeApp, applicationDefault } = require(join(fnMods, "firebase-admin/lib/app/index.js"));
-const credential = applicationDefault();
-const { getFirestore } = require(join(fnMods, "firebase-admin/lib/firestore/index.js"));
-const { getStorage } = require(join(fnMods, "firebase-admin/lib/storage/index.js"));
-const { getAuth } = require(join(fnMods, "firebase-admin/lib/auth/index.js"));
-
-const local = JSON.parse(readFileSync(join(repo, "app/config.local.json"), "utf8"));
-const storageBucket = local?.extra?.firebase?.storageBucket;
-if (!storageBucket) { console.error("storageBucket missing from app/config.local.json"); process.exit(1); }
-
-initializeApp({ credential, projectId: PROJECT, storageBucket });
-const db = getFirestore();
-const bucket = getStorage().bucket();
-const auth = getAuth();
-
-const mask = (email = "") => email.replace(/^(.).*(@.*)$/, "$1***$2");
+const { db, bucket, auth } = initAdmin();
 
 if (args["list-accounts"]) {
   const { users } = await auth.listUsers(50);
@@ -72,9 +32,8 @@ if (!args.from || !args.to || args.from === true || args.to === true) {
 if (args.from === args.to) { console.error("Source and target must differ."); process.exit(1); }
 
 // --from / --to accept an email or a uid prefix as shown by --list-accounts.
-const findUser = async (q) => q.includes("@") ? auth.getUserByEmail(q) : (await auth.listUsers(100)).users.find((u) => u.uid.startsWith(q)) ?? Promise.reject(new Error(`no account matches ${q}`));
-const src = await findUser(args.from);
-const dst = await findUser(args.to);
+const src = await findUser(auth, args.from);
+const dst = await findUser(auth, args.to);
 if (src.uid === dst.uid) { console.error("Source and target must differ."); process.exit(1); }
 
 // --- Copy -----------------------------------------------------------------------------------------------

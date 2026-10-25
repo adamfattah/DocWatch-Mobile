@@ -16,7 +16,8 @@
         "NSPhotoLibraryUsageDescription": "Pick a document photo so docwatch can read its expiration date.",
         "UIBackgroundModes": [
           "remote-notification"
-        ]
+        ],
+        "NSFaceIDUsageDescription": "DocWatch uses Face ID to lock your documents when Require Face ID is on."
       }
     },
     "plugins": [
@@ -58,7 +59,13 @@
         }
       ],
       "./plugins/withPodsDeploymentTarget",
-      "./plugins/withSceneLifecycle"
+      "./plugins/withSceneLifecycle",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "DocWatch uses Face ID to lock your documents when Require Face ID is on."
+        }
+      ]
     ],
     "extra": {
       "eas": {

@@ -10,7 +10,7 @@ export function DocsProvider({ uid, children }: { uid: string; children: React.R
   const [docs, setDocs] = useState<Doc[] | null>(null);
   useEffect(() => {
     const q = query(collection(db, "users", uid, "docs"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => setDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Doc, "id">) }))));
+    return onSnapshot(q, (snap) => setDocs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Doc, "id">) }))), (e) => console.warn("docs listener", e.code));
   }, [uid]);
   return <Ctx.Provider value={docs}>{children}</Ctx.Provider>;
 }
