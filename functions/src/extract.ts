@@ -29,7 +29,8 @@ Return JSON only.
 - documentNumber: the main identifying number (passport no., policy no., licence no., plate...); null if none.
 - title: short label a person would recognise (e.g. "Passport - USA", "Auto insurance - GEICO").
 - expirationDate: the date the document stops being valid. ISO yyyy-mm-dd. Null if none visible.
-- renewalDate: a distinct renew-by / next-due date if the document shows one; else null.
+- renewalDate: only a date the document explicitly labels as renew-by, next due, or next payment. Never the
+  effective, issue, start or policy-period-from date. Null unless such a label is present.
 - If only month/year is shown, use the last day of that month.
 - If the year is 2 digits, assume the nearest future-or-recent century interpretation.
 - confidence: 0-1 how sure you are the dates are correct and are the expiration (not issue) dates.

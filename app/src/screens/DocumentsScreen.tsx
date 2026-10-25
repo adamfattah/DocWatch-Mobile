@@ -56,7 +56,7 @@ export default function DocumentsScreen({ uid }: { uid: string }) {
           />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} style={s.chipsWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} style={s.chipsWrap} keyboardShouldPersistTaps="handled">
           <Chip label="All" on={cat === "all"} onPress={() => setCat("all")} />
           {present.map((c) => <Chip key={c.key} label={c.label} on={cat === c.key} onPress={() => setCat(c.key)} />)}
         </ScrollView>

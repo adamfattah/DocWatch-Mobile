@@ -10,3 +10,6 @@ google-services.json
 .env*
 config.local.json
 step*.log
+
+# Dev-only fixtures (real documents) - never committed
+scripts/dev/fixtures/
