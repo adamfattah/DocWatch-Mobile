@@ -50,8 +50,9 @@ export default function DocumentDetailScreen({ uid }: { uid: string }) {
     });
   }, [nav, d?.storagePath]);
 
-  // Deleted elsewhere (or never existed): leave the screen.
-  useEffect(() => { if (docs && !d) nav.goBack(); }, [docs, d, nav]);
+  // Deleted (here or elsewhere) or never existed: leave the screen. This is the only place that navigates back
+  // after a delete, so the snapshot update and the delete handler never both pop the screen.
+  useEffect(() => { if (docs && !d && nav.canGoBack()) nav.goBack(); }, [docs, d, nav]);
 
   if (!d) return <View style={s.center}><ActivityIndicator /></View>;
 
@@ -77,8 +78,7 @@ export default function DocumentDetailScreen({ uid }: { uid: string }) {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
         deleteObject(ref(storage, d.storagePath)).catch(() => {});
-        await deleteDoc(doc(db, "users", uid, "docs", params.docId));
-        nav.goBack();
+        await deleteDoc(doc(db, "users", uid, "docs", params.docId)); // the docs snapshot then pops this screen
       } },
     ]);
 
