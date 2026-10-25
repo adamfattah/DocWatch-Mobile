@@ -12,6 +12,7 @@ export interface Doc {
   needsReview?: boolean;
   storagePath: string;
   contentType: string;
+  error?: string | null;
   createdAt?: { seconds: number };
 }
 

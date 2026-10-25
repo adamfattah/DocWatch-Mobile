@@ -1,11 +1,11 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2";
 import { defineSecret } from "firebase-functions/params";
-import { extractFromFile } from "./extract";
+import { processDoc } from "./process";
 import { sendPush } from "./push";
 import type { DocRecord, UserRecord } from "./types";
 
@@ -15,7 +15,6 @@ const db = getFirestore();
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 
 // Defaults - the user never configures these.
-const REVIEW_THRESHOLD = 0.6;
 const REMINDER_DAYS = [30, 7, 1, 0]; // days before expiry; 0 = day of
 const LOCAL_SEND_HOUR = 9;           // 9am in the user's timezone
 
@@ -25,38 +24,22 @@ export const onDocUploaded = onObjectFinalized({ memory: "1GiB", timeoutSeconds:
   const m = path.match(/^users\/([^/]+)\/docs\/([^/]+)\//);
   if (!m) return;
   const [, uid, docId] = m;
+  await processDoc(uid, docId, { bucket: event.data.bucket, contentType: event.data.contentType });
+});
+
+// 1b) "Try again" on a failed doc: re-run extraction on the file already in Storage. Owner only.
+export const reprocessDoc = onCall({ memory: "1GiB", timeoutSeconds: 120, secrets: [OPENAI_API_KEY] }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  const docId = typeof request.data?.docId === "string" ? request.data.docId : "";
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(docId)) throw new HttpsError("invalid-argument", "docId is required.");
   const ref = db.doc(`users/${uid}/docs/${docId}`);
-  const contentType = event.data.contentType ?? "application/octet-stream";
-
-  try {
-    const [bytes] = await getStorage().bucket(event.data.bucket).file(path).download();
-    const x = await extractFromFile(bytes, contentType);
-    const hasDate = !!(x.expirationDate || x.renewalDate);
-    const needsReview = !hasDate || x.confidence < REVIEW_THRESHOLD;
-
-    const update: Partial<DocRecord> = {
-      ...x,
-      status: hasDate ? "ready" : "no_date",
-      needsReview,
-      remindersSent: [],
-      processedAt: Timestamp.now(),
-    };
-    await ref.set(update, { merge: true });
-
-    const user = (await db.doc(`users/${uid}`).get()).data() as UserRecord | undefined;
-    if (needsReview) {
-      await sendPush(user?.pushToken, "Quick check?",
-        hasDate ? `We read "${x.title}" expiring ${x.expirationDate ?? x.renewalDate}. Tap to confirm.`
-                : `We couldn't find an expiration date on "${x.title}". Tap to add one (optional).`,
-        { docId });
-    } else {
-      await sendPush(user?.pushToken, "Got it",
-        `${x.title} - expires ${x.expirationDate ?? x.renewalDate}. We'll remind you.`, { docId });
-    }
-  } catch (e: any) {
-    console.error("extraction failed", e);
-    await ref.set({ status: "failed", error: String(e?.message ?? e), processedAt: Timestamp.now() }, { merge: true });
-  }
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Document not found."); // also covers other users' docs: the path is scoped to the caller
+  if (!snap.data()?.storagePath?.startsWith(`users/${uid}/docs/${docId}/`)) throw new HttpsError("permission-denied", "Not your document.");
+  await ref.set({ status: "processing", error: null, needsReview: false }, { merge: true });
+  const status = await processDoc(uid, docId);
+  return { status };
 });
 
 // 2) Hourly: for every user whose local time is 9am, send due reminders.

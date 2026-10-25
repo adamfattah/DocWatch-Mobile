@@ -19,7 +19,7 @@ export interface DocRecord extends Partial<Extraction> {
   needsReview?: boolean;
   reviewedAt?: FirebaseFirestore.Timestamp | null;
   remindersSent?: number[];  // days-before values already sent, e.g. [30, 7]
-  error?: string;
+  error?: string | null;
 }
 
 export interface UserRecord {
