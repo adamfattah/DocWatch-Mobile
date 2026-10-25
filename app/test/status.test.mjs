@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   bucketFor, statusLine, daysUntil, governingDate, categoryFor, defaultBucket, countBuckets,
-  shortDate, longDate, eyebrowDate, defaultReminder, subtitleFor, rowDate,
+  shortDate, longDate, eyebrowDate, defaultReminder, subtitleFor, rowDate, formatTime, formatDateTime,
 } from "../src/lib/status.ts";
 
 const today = "2026-10-16";
@@ -84,6 +84,10 @@ test("default reminder is 30 days before at 9:00 AM", () => {
   assert.equal(defaultReminder(ready("2026-12-31"), today).state, "scheduled");
   assert.equal(defaultReminder(ready("2026-10-30"), today).state, "missed");
   assert.equal(defaultReminder(ready(null), today), null);
+  assert.equal(defaultReminder(ready("2026-12-31"), today, 60, "18:30").when, "Nov 1, 2026 at 6:30 PM");
+  assert.equal(formatTime("00:05"), "12:05 AM");
+  assert.equal(formatTime("12:00"), "12:00 PM");
+  assert.equal(formatDateTime(new Date(2026, 9, 30, 9, 0)), "Oct 30, 2026 at 9:00 AM");
 });
 
 test("subtitle masks the document number", () => {
