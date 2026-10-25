@@ -11,18 +11,22 @@ const SCHEMA = {
     docType: { type: "string" },
     title: { type: "string" },
     issuer: { type: ["string", "null"] },
+    holderName: { type: ["string", "null"], description: "Full name of the person the document belongs to, or null" },
+    documentNumber: { type: ["string", "null"], description: "The document, policy, licence or ID number as printed, or null" },
     expirationDate: { type: ["string", "null"], description: "ISO yyyy-mm-dd or null" },
     renewalDate: { type: ["string", "null"], description: "ISO yyyy-mm-dd or null" },
     confidence: { type: "number" },
     notes: { type: ["string", "null"] },
   },
-  required: ["docType", "title", "issuer", "expirationDate", "renewalDate", "confidence", "notes"],
+  required: ["docType", "title", "issuer", "holderName", "documentNumber", "expirationDate", "renewalDate", "confidence", "notes"],
 } as const;
 
 const PROMPT = `You read a photo or PDF of a personal or business document and extract when it expires.
 Return JSON only.
-- docType: one of passport, drivers_license, id_card, visa, insurance_policy, vehicle_registration,
+- docType: one of passport, drivers_license, id_card, visa, insurance_policy, vehicle_registration, health_card,
   warranty, lease, contract, certification, license_permit, membership, subscription, medication, other.
+- holderName: the full name of the person (or business) the document is issued to; null if not visible.
+- documentNumber: the main identifying number (passport no., policy no., licence no., plate...); null if none.
 - title: short label a person would recognise (e.g. "Passport - USA", "Auto insurance - GEICO").
 - expirationDate: the date the document stops being valid. ISO yyyy-mm-dd. Null if none visible.
 - renewalDate: a distinct renew-by / next-due date if the document shows one; else null.
@@ -52,11 +56,20 @@ export async function extractFromFile(bytes: Buffer, mimeType: string): Promise<
     docType: raw.docType ?? "other",
     title: raw.title ?? "Document",
     issuer: raw.issuer ?? null,
+    holderName: typeof raw.holderName === "string" && raw.holderName.trim() ? raw.holderName.trim() : null,
+    documentNumberLast4: last4(raw.documentNumber),
     expirationDate: validDate(raw.expirationDate),
     renewalDate: validDate(raw.renewalDate),
     confidence: clamp(Number(raw.confidence ?? 0)),
     notes: raw.notes ?? null,
   };
+}
+
+// Only the last 4 characters of the number are ever stored; the full number never leaves this function.
+function last4(n: unknown): string | null {
+  if (typeof n !== "string") return null;
+  const s = n.replace(/[^A-Za-z0-9]/g, "");
+  return s.length >= 4 ? s.slice(-4).toUpperCase() : null;
 }
 
 function validDate(s: unknown): string | null {

@@ -4,6 +4,8 @@ export interface Extraction {
   docType: string;           // e.g. "passport", "drivers_license", "insurance_policy", "lease", "other"
   title: string;             // short human label, e.g. "Passport - USA"
   issuer: string | null;
+  holderName: string | null;
+  documentNumberLast4: string | null; // never the full number
   expirationDate: string | null; // ISO yyyy-mm-dd
   renewalDate: string | null;    // ISO yyyy-mm-dd (if distinct from expiration, e.g. renew-by date)
   confidence: number;        // 0..1 overall confidence in the dates

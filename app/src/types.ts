@@ -6,6 +6,8 @@ export interface Doc {
   title?: string;
   docType?: string;
   issuer?: string | null;
+  holderName?: string | null;
+  documentNumberLast4?: string | null;
   expirationDate?: string | null;
   renewalDate?: string | null;
   confidence?: number;
@@ -13,10 +15,18 @@ export interface Doc {
   storagePath: string;
   contentType: string;
   error?: string | null;
+  remindersSent?: number[];
   createdAt?: { seconds: number };
 }
 
 export type RootStackParamList = {
-  Home: undefined;
-  Review: { docId: string };
+  Tabs: undefined;
+  Document: { docId: string };
+};
+
+export type TabParamList = {
+  Upcoming: undefined;
+  Documents: undefined;
+  Shared: undefined;
+  Settings: undefined;
 };
