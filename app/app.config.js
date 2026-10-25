@@ -8,7 +8,11 @@ module.exports = ({ config }) => {
   const local = JSON.parse(fs.readFileSync(file, "utf8"));
   return {
     ...config,
-    ios: { ...config.ios, bundleIdentifier: local.bundleIdentifier ?? config.ios.bundleIdentifier },
+    ios: {
+      ...config.ios,
+      bundleIdentifier: local.bundleIdentifier ?? config.ios.bundleIdentifier,
+      appleTeamId: local.appleTeamId ?? config.ios.appleTeamId,
+    },
     plugins: config.plugins.map((p) =>
       Array.isArray(p) && p[0] === "@react-native-google-signin/google-signin" && local.googleIosUrlScheme
         ? [p[0], { ...p[1], iosUrlScheme: local.googleIosUrlScheme }] : p),

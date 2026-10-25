@@ -9,7 +9,7 @@ Snap or upload a document. docwatch reads it, finds the expiration date, and rem
 | App | Expo (React Native, iOS), TypeScript |
 | Auth | Firebase Auth: Sign in with Apple, Google, Email |
 | Storage / DB | Cloud Storage for Firebase, Firestore |
-| AI | Gemini 2.5 Flash via Vertex AI (image + PDF in, structured JSON out) |
+| AI | OpenAI vision (`gpt-4.1-mini` by default, image + PDF in, structured JSON out) |
 | Backend | Cloud Functions for Firebase (2nd gen): Storage trigger + hourly scheduler |
 | Push | expo-notifications + Expo push service (APNs under the hood) |
 
@@ -86,3 +86,25 @@ Sign in with Apple requires the capability on your App ID in the Apple Developer
 
 ## Not included (by design)
 Android, categories/folders, manual entry as a first-class flow, sharing, OCR text search, reminder customization. All of these add user effort; the product promise is "upload and forget".
+
+## Test on iPhone
+
+The app on the phone is an Expo development build. It loads JavaScript from Metro on this Mac over Wi-Fi, so the phone and the Mac must be on the same network.
+
+1. Start Metro in LAN mode (leave this terminal open):
+
+   ```bash
+   cd app && npm run metro
+   ```
+
+2. Open **docwatch** on the iPhone. The dev-client launcher lists the Mac under "Development servers". Tap it. If it is not listed, tap **Enter URL manually** and type the URL Metro printed, e.g. `http://192.168.1.109:8081`.
+
+3. Edits to files under `app/` reload live. Shake the phone for the dev menu (Reload, Debug).
+
+Rebuild and reinstall only when native code or `app.json` plugins change:
+
+```bash
+cd app && npx expo run:ios --device
+```
+
+If `expo run:ios` cannot find the device on this Xcode, build the `docwatch` scheme from `app/ios/docwatch.xcworkspace` in Xcode with the iPhone selected, which also handles signing (Xcode > Settings > Accounts must have your Apple ID).
