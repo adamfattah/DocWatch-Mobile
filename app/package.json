@@ -24,15 +24,18 @@
     "expo-dev-client": "~5.2.0",
     "expo-device": "~7.1.0",
     "expo-document-picker": "~13.1.0",
+    "expo-file-system": "~18.1.11",
     "expo-image-picker": "~16.1.0",
     "expo-localization": "~16.1.0",
     "expo-notifications": "~0.31.0",
+    "expo-sharing": "~13.1.5",
     "expo-status-bar": "~2.2.0",
     "firebase": "^12.3.0",
     "react": "19.0.0",
     "react-native": "0.79.6",
     "react-native-safe-area-context": "5.4.0",
-    "react-native-screens": "~4.11.0"
+    "react-native-screens": "~4.11.0",
+    "react-native-webview": "13.13.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

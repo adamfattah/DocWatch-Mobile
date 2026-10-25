@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, Image } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, Alert } from "react-native";
 import { useRoute, useNavigation, RouteProp } from "@react-navigation/native";
 import { doc, onSnapshot, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { ref, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref, deleteObject } from "firebase/storage";
 import { db, storage } from "../firebase";
 import type { Doc, RootStackParamList } from "../types";
+import FilePreview from "../components/FilePreview";
 
 // Optional review. User can confirm with one tap, fix the date, or ignore the screen entirely.
 export default function ReviewScreen({ uid }: { uid: string }) {
@@ -13,7 +14,6 @@ export default function ReviewScreen({ uid }: { uid: string }) {
   const [d, setD] = useState<Doc | null>(null);
   const [date, setDate] = useState("");
   const [title, setTitle] = useState("");
-  const [img, setImg] = useState<string | null>(null);
 
   useEffect(() => {
     const r = doc(db, "users", uid, "docs", params.docId);
@@ -23,7 +23,6 @@ export default function ReviewScreen({ uid }: { uid: string }) {
       setD(data);
       setDate((prev) => prev || data.expirationDate || data.renewalDate || "");
       setTitle((prev) => prev || data.title || "");
-      if (data.contentType.startsWith("image/")) getDownloadURL(ref(storage, data.storagePath)).then(setImg).catch(() => {});
     });
   }, [uid, params.docId]);
 
@@ -48,7 +47,7 @@ export default function ReviewScreen({ uid }: { uid: string }) {
   if (!d) return null;
   return (
     <View style={s.wrap}>
-      {img && <Image source={{ uri: img }} style={s.img} resizeMode="contain" />}
+      <FilePreview storagePath={d.storagePath} contentType={d.contentType} title={d.title} />
       {d.needsReview && <Text style={s.hint}>We weren't sure about this one. Does this look right?</Text>}
       <Text style={s.label}>Name</Text>
       <TextInput style={s.input} value={title} onChangeText={setTitle} />
@@ -63,7 +62,6 @@ export default function ReviewScreen({ uid }: { uid: string }) {
 
 const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: "#fff", padding: 20, gap: 8 },
-  img: { width: "100%", height: 220, borderRadius: 12, backgroundColor: "#f2f2f2", marginBottom: 8 },
   hint: { backgroundColor: "#fff3cd", color: "#7a5a00", padding: 12, borderRadius: 10, marginBottom: 8 },
   label: { color: "#666", fontSize: 13, marginTop: 8 },
   input: { height: 48, borderRadius: 12, borderWidth: 1, borderColor: "#ddd", paddingHorizontal: 14, fontSize: 16 },
