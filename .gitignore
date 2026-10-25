@@ -1,10 +1,12 @@
 node_modules/
 .expo/
 dist/
-lib/
+functions/lib/
 ios/
 android/
 *.log
 GoogleService-Info.plist
 google-services.json
 .env*
+config.local.json
+step*.log

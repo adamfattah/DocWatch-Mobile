@@ -4,6 +4,7 @@ import { getStorage } from "firebase-admin/storage";
 import { onObjectFinalized } from "firebase-functions/v2/storage";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2";
+import { defineSecret } from "firebase-functions/params";
 import { extractFromFile } from "./extract";
 import { sendPush } from "./push";
 import type { DocRecord, UserRecord } from "./types";
@@ -11,6 +12,7 @@ import type { DocRecord, UserRecord } from "./types";
 initializeApp();
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 const db = getFirestore();
+const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 
 // Defaults - the user never configures these.
 const REVIEW_THRESHOLD = 0.6;
@@ -18,7 +20,7 @@ const REMINDER_DAYS = [30, 7, 1, 0]; // days before expiry; 0 = day of
 const LOCAL_SEND_HOUR = 9;           // 9am in the user's timezone
 
 // 1) File lands in Storage -> classify + extract -> write Firestore doc -> maybe ask for review.
-export const onDocUploaded = onObjectFinalized({ memory: "1GiB", timeoutSeconds: 120 }, async (event) => {
+export const onDocUploaded = onObjectFinalized({ memory: "1GiB", timeoutSeconds: 120, secrets: [OPENAI_API_KEY] }, async (event) => {
   const path = event.data.name; // users/{uid}/docs/{docId}/original.ext
   const m = path.match(/^users\/([^/]+)\/docs\/([^/]+)\//);
   if (!m) return;

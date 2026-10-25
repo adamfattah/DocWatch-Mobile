@@ -1,28 +1,23 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
 import type { Extraction } from "./types";
 
-// Vertex AI (GCP). Set GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION via env; ADC handles auth inside Cloud Functions.
-const ai = new GoogleGenAI({
-  vertexai: true,
-  project: process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT,
-  location: process.env.GOOGLE_CLOUD_LOCATION ?? "us-central1",
-});
-
-const MODEL = process.env.VISION_MODEL ?? "gemini-2.5-flash";
+// OpenAI vision. The API key comes from the OPENAI_API_KEY secret (Secret Manager) bound in index.ts.
+const MODEL = process.env.VISION_MODEL ?? "gpt-4.1-mini";
 
 const SCHEMA = {
-  type: Type.OBJECT,
+  type: "object",
+  additionalProperties: false,
   properties: {
-    docType: { type: Type.STRING },
-    title: { type: Type.STRING },
-    issuer: { type: Type.STRING, nullable: true },
-    expirationDate: { type: Type.STRING, nullable: true, description: "ISO yyyy-mm-dd or null" },
-    renewalDate: { type: Type.STRING, nullable: true, description: "ISO yyyy-mm-dd or null" },
-    confidence: { type: Type.NUMBER },
-    notes: { type: Type.STRING, nullable: true },
+    docType: { type: "string" },
+    title: { type: "string" },
+    issuer: { type: ["string", "null"] },
+    expirationDate: { type: ["string", "null"], description: "ISO yyyy-mm-dd or null" },
+    renewalDate: { type: ["string", "null"], description: "ISO yyyy-mm-dd or null" },
+    confidence: { type: "number" },
+    notes: { type: ["string", "null"] },
   },
-  required: ["docType", "title", "confidence"],
-};
+  required: ["docType", "title", "issuer", "expirationDate", "renewalDate", "confidence", "notes"],
+} as const;
 
 const PROMPT = `You read a photo or PDF of a personal or business document and extract when it expires.
 Return JSON only.
@@ -36,18 +31,23 @@ Return JSON only.
 - confidence: 0-1 how sure you are the dates are correct and are the expiration (not issue) dates.
   Use < 0.6 when blurry, ambiguous, or you had to guess which date is the expiry.`;
 
+let client: OpenAI | null = null;
+const getClient = () => (client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
+
 export async function extractFromFile(bytes: Buffer, mimeType: string): Promise<Extraction> {
-  const res = await ai.models.generateContent({
+  const b64 = bytes.toString("base64");
+  const filePart: OpenAI.Chat.Completions.ChatCompletionContentPart =
+    mimeType === "application/pdf"
+      ? { type: "file", file: { filename: "document.pdf", file_data: `data:application/pdf;base64,${b64}` } }
+      : { type: "image_url", image_url: { url: `data:${mimeType};base64,${b64}`, detail: "high" } };
+
+  const res = await getClient().chat.completions.create({
     model: MODEL,
-    contents: [
-      { role: "user", parts: [
-        { inlineData: { mimeType, data: bytes.toString("base64") } },
-        { text: PROMPT },
-      ] },
-    ],
-    config: { responseMimeType: "application/json", responseSchema: SCHEMA, temperature: 0 },
+    temperature: 0,
+    messages: [{ role: "user", content: [filePart, { type: "text", text: PROMPT }] }],
+    response_format: { type: "json_schema", json_schema: { name: "extraction", strict: true, schema: SCHEMA } },
   });
-  const raw = JSON.parse(res.text ?? "{}");
+  const raw = JSON.parse(res.choices[0]?.message?.content ?? "{}");
   return {
     docType: raw.docType ?? "other",
     title: raw.title ?? "Document",
